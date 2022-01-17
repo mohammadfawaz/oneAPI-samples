@@ -21,13 +21,21 @@ constexpr bool READY = true;
 
 // Forward declare the kernel names in the global scope.
 // This FPGA best practice reduces name mangling in the optimization reports.
+template<bool use_fences>
 class ProducerKernel;
+
+template<bool use_fences>
 class ConsumerKernel;
 
-using my_pipe = ext::intel::pipe<class some_pipe, bool>;
+template<bool use_fences>
+class some_pipe;
 
+
+template<bool use_fences>
 void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
                    size_t size) {
+  
+  using my_pipe = ext::intel::pipe<some_pipe<use_fences>, bool>;
   // Allocate the device memory
   int *in_ptr = malloc_device<int>(size, q);
   int *out_ptr = malloc_device<int>(size, q);
@@ -51,7 +59,7 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
 
   // Launch the the consumer kernel
   auto consumer_event = q.submit([&](handler &h) {
-    h.single_task<ConsumerKernel>([=]() [[intel::kernel_args_restrict]] {
+    h.single_task<ConsumerKernel<use_fences>>([=]() [[intel::kernel_args_restrict]] {
       // Create device pointers to explicitly inform the compiler these
       // pointer reside in the device's address space
       device_ptr<int> buffer_ptr_d(buffer_ptr);
@@ -62,7 +70,8 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
       int ready = my_pipe::read();
 
       // Use atomic_fence to ensure memory ordering
-      atomic_fence(memory_order::seq_cst, memory_scope::device);
+      if constexpr (use_fences) 
+        atomic_fence(memory_order::seq_cst, memory_scope::device);
 
       for (int i = (size - 1); i >= 0; i--)
         out_ptr_d[i] = buffer_ptr_d[i];
@@ -75,7 +84,7 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
     // the device's memory
     h.depends_on(copy_host_to_device_event);
 
-    h.single_task<ProducerKernel>([=]() [[intel::kernel_args_restrict]] {
+    h.single_task<ProducerKernel<use_fences>>([=]() [[intel::kernel_args_restrict]] {
       // Create device pointers to explicitly inform the compiler these
       // Pointer reside in the device's address space
       device_ptr<int> in_ptr_d(in_ptr);
@@ -116,9 +125,10 @@ int main() {
   double time_kernel;
 
   // Create input and output vectors
-  std::vector<int> in, out_fpga, out_cpu;
+  std::vector<int> in, out_fpga_with_fence, out_fpga_without_fence, out_cpu;
   in.resize(vector_size);
-  out_fpga.resize(vector_size);
+  out_fpga_with_fence.resize(vector_size);
+  out_fpga_without_fence.resize(vector_size);
   out_cpu.resize(vector_size);
 
   // Generate some random input data
@@ -138,7 +148,8 @@ int main() {
 
     std::cout << "\nVector size: " << vector_size << "\n";
 
-    launchKernels(q, in, out_fpga, vector_size);
+    launchKernels<true>(q, in, out_fpga_with_fence, vector_size);
+    launchKernels<false>(q, in, out_fpga_without_fence, vector_size);
   } catch (sycl::exception const &e) {
     // Catches exceptions in the host code
     std::cerr << "Caught a SYCL host exception:\n" << e.what() << "\n";
@@ -159,21 +170,39 @@ int main() {
     out_cpu[i] = in[i] * i;
 
   // Verify output and print pass/fail
-  bool passed = true;
+  bool match_with_fences = true;
+  bool mismatch_without_fences = false;
   int num_errors = 0;
   for (int b = 0; b < vector_size; b++) {
-    if (num_errors < 10 && out_fpga[b] != out_cpu[b]) {
-      passed = false;
+    if (num_errors < 10 && out_fpga_with_fence[b] != out_cpu[b]) {
+      match_with_fences = false;
       std::cerr << " (mismatch, expected " << out_cpu[b] << ")\n";
       num_errors++;
     }
   }
 
-  if (passed) {
-    std::cout << "Verification PASSED\n\n";
+  for (int b = 0; b < vector_size; b++) {
+    if (out_fpga_without_fence[b] != out_cpu[b]) {
+      mismatch_without_fences = true;
+      break;
+    }
+  }
+
+  if (match_with_fences) {
+    std::cout << "Verification PASSED when fences are used.\n\n";
   } else {
-    std::cerr << "Verification FAILED\n";
+    std::cerr << "Verification FAILED when fences are used.\n";
     return 1;
   }
+
+#if !defined(FPGA_EMULATOR)
+    if (mismatch_without_fences) {
+      std::cout << "Verification PASSED when fences are not used. Mismatch detected.\n\n";
+    } else {
+      std::cerr << "Verification FAILED when fences are not used. Mismatch expected.\n";
+      return 1;
+    }
+#endif
+
   return 0;
 }
