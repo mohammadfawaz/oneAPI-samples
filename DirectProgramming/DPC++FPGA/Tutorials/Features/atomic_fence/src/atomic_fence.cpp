@@ -15,28 +15,25 @@
 
 using namespace sycl;
 
-constexpr size_t vector_size = 16;    // Size of the input vector
-constexpr double kNs = 1e9;           // number of nanoseconds in a second
+constexpr size_t vector_size = 16; // Size of the input vector
+constexpr double kNs = 1e9;        // number of nanoseconds in a second
 constexpr bool READY = true;
 
 // Forward declare the kernel names in the global scope.
 // This FPGA best practice reduces name mangling in the optimization reports.
-template<bool use_fences>
-class ProducerKernel;
+template <bool use_fences> class ProducerKernel;
 
-template<bool use_fences>
-class ConsumerKernel;
+template <bool use_fences> class ConsumerKernel;
 
-template<bool use_fences>
-class some_pipe;
+template <bool use_fences> class some_pipe;
 
-
-template<bool use_fences>
-void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out) {
+template <bool use_fences>
+void launchKernels(queue &q, const std::vector<int> &in,
+                   std::vector<int> &out) {
   using my_pipe = ext::intel::pipe<some_pipe<use_fences>, bool>;
 
-  assert(in.size() == vector_size); 
-  assert(out.size() == vector_size); 
+  assert(in.size() == vector_size);
+  assert(out.size() == vector_size);
 
   // Allocate the device memory
   int *in_ptr = malloc_device<int>(vector_size, q);
@@ -61,7 +58,8 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out) 
 
   // Launch the the consumer kernel
   auto consumer_event = q.submit([&](handler &h) {
-    h.single_task<ConsumerKernel<use_fences>>([=]() [[intel::kernel_args_restrict]] {
+    h.single_task<ConsumerKernel<use_fences>>([=
+    ]() [[intel::kernel_args_restrict]] {
       // Create device pointers to explicitly inform the compiler these
       // pointer reside in the device's address space
       device_ptr<int> buffer_ptr_d(buffer_ptr);
@@ -72,7 +70,7 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out) 
       int ready = my_pipe::read();
 
       // Use atomic_fence to ensure memory ordering
-      if constexpr (use_fences) 
+      if constexpr (use_fences)
         atomic_fence(memory_order::seq_cst, memory_scope::device);
 
 #pragma unroll
@@ -87,7 +85,8 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out) 
     // the device's memory
     h.depends_on(copy_host_to_device_event);
 
-    h.single_task<ProducerKernel<use_fences>>([=]() [[intel::kernel_args_restrict]] {
+    h.single_task<ProducerKernel<use_fences>>([=
+    ]() [[intel::kernel_args_restrict]] {
       // Create device pointers to explicitly inform the compiler these
       // Pointer reside in the device's address space
       device_ptr<int> in_ptr_d(in_ptr);
@@ -98,7 +97,7 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out) 
         buffer_ptr_d[i] = in_ptr_d[i] * i;
 
       // Use atomic_fence to ensure memory ordering
-      if constexpr (use_fences) 
+      if constexpr (use_fences)
         atomic_fence(memory_order::seq_cst, memory_scope::device);
 
       // Notify the consumer to start data processing
@@ -195,19 +194,23 @@ int main() {
   }
 
   if (match_with_fences) {
-    std::cout << "Verification PASSED when fences are used.\n\n";
+    std::cout
+        << "Results are correct when fences are used, as expected. PASSED.\n\n";
   } else {
-    std::cerr << "Verification FAILED when fences are used.\n";
+    std::cerr << "Results are incorrect when fences are used. This is "
+                 "unexpected. FAILED.\n\n";
     return 1;
   }
 
 #if !defined(FPGA_EMULATOR)
-    if (mismatch_without_fences) {
-      std::cout << "Verification PASSED when fences are not used. Mismatch detected.\n\n";
-    } else {
-      std::cerr << "Verification FAILED when fences are not used. Mismatch expected.\n";
-      return 1;
-    }
+  if (mismatch_without_fences) {
+    std::cout << "Results are incorrect when fences are not used, as expected. "
+                 "PASSED.\n\n";
+  } else {
+    std::cerr << "Results are correct when fences are not used. This is "
+                 "unexpected. FAILED.\n\n";
+    return 1;
+  }
 #endif
 
   return 0;
