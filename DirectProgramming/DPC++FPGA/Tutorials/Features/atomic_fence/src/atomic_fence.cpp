@@ -178,6 +178,13 @@ int main() {
   bool match_with_fences = true;
   bool mismatch_without_fences = false;
   int num_errors = 0;
+
+  for (int b = 0; b < vector_size; b++) {
+    std::cout << " out_cpu[b]: " << out_cpu[b] << "\n";
+    std::cout << " out_fpga_with_fence[b]: " << out_fpga_with_fence[b] << "\n";
+    std::cout << " out_fpga_without_fence[b]: " << out_fpga_without_fence[b] << "\n";
+  }
+
   for (int b = 0; b < vector_size; b++) {
     if (num_errors < 10 && out_fpga_with_fence[b] != out_cpu[b]) {
       match_with_fences = false;
