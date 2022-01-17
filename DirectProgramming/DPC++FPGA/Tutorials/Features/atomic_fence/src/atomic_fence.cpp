@@ -15,7 +15,7 @@
 
 using namespace sycl;
 
-constexpr size_t vector_size = 10000; // Size of the input vector
+constexpr size_t vector_size = 16;    // Size of the input vector
 constexpr double kNs = 1e9;           // number of nanoseconds in a second
 constexpr bool READY = true;
 
@@ -32,16 +32,18 @@ class some_pipe;
 
 
 template<bool use_fences>
-void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
-                   size_t size) {
-  
+void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out) {
   using my_pipe = ext::intel::pipe<some_pipe<use_fences>, bool>;
+
+  assert(in.size() == vector_size); 
+  assert(out.size() == vector_size); 
+
   // Allocate the device memory
-  int *in_ptr = malloc_device<int>(size, q);
-  int *out_ptr = malloc_device<int>(size, q);
+  int *in_ptr = malloc_device<int>(vector_size, q);
+  int *out_ptr = malloc_device<int>(vector_size, q);
 
   // A buffer shared by consumer and producer to exchange data
-  int *buffer_ptr = malloc_device<int>(size, q);
+  int *buffer_ptr = malloc_device<int>(vector_size, q);
 
   // Ensure we successfully allocated the device memory
   if (in_ptr == nullptr)
@@ -55,7 +57,7 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
 
   // Copy host input data to the device's memory
   auto copy_host_to_device_event =
-      q.memcpy(in_ptr, in.data(), size * sizeof(int));
+      q.memcpy(in_ptr, in.data(), vector_size * sizeof(int));
 
   // Launch the the consumer kernel
   auto consumer_event = q.submit([&](handler &h) {
@@ -73,7 +75,8 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
       if constexpr (use_fences) 
         atomic_fence(memory_order::seq_cst, memory_scope::device);
 
-      for (int i = (size - 1); i >= 0; i--)
+#pragma unroll
+      for (size_t i = 0; i < vector_size; i++)
         out_ptr_d[i] = buffer_ptr_d[i];
     });
   });
@@ -89,11 +92,14 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
       // Pointer reside in the device's address space
       device_ptr<int> in_ptr_d(in_ptr);
       device_ptr<int> buffer_ptr_d(buffer_ptr);
-      for (size_t i = 0; i < size; i++)
+
+#pragma unroll
+      for (size_t i = 0; i < vector_size; i++)
         buffer_ptr_d[i] = in_ptr_d[i] * i;
 
       // Use atomic_fence to ensure memory ordering
-      atomic_fence(memory_order::seq_cst, memory_scope::device);
+      if constexpr (use_fences) 
+        atomic_fence(memory_order::seq_cst, memory_scope::device);
 
       // Notify the consumer to start data processing
       my_pipe::write(READY);
@@ -105,7 +111,7 @@ void launchKernels(queue &q, const std::vector<int> &in, std::vector<int> &out,
     // We cannot copy the output data from the device's to the host's memory
     // until the consumer kernel has finished
     h.depends_on(consumer_event);
-    h.memcpy(out.data(), out_ptr, size * sizeof(int));
+    h.memcpy(out.data(), out_ptr, vector_size * sizeof(int));
   });
 
   // Wait for copy back to finish
@@ -148,8 +154,8 @@ int main() {
 
     std::cout << "\nVector size: " << vector_size << "\n";
 
-    launchKernels<true>(q, in, out_fpga_with_fence, vector_size);
-    launchKernels<false>(q, in, out_fpga_without_fence, vector_size);
+    launchKernels<true>(q, in, out_fpga_with_fence);
+    launchKernels<false>(q, in, out_fpga_without_fence);
   } catch (sycl::exception const &e) {
     // Catches exceptions in the host code
     std::cerr << "Caught a SYCL host exception:\n" << e.what() << "\n";
