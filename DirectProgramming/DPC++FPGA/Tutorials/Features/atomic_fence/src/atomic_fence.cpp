@@ -16,6 +16,7 @@
 using namespace sycl;
 
 constexpr int vector_size = 10000;    // Size of the input vector
+constexpr int iters = 10;             // Size of the input vector
 constexpr double kNs = 1e9;           // number of nanoseconds in a second
 constexpr bool READY = true;
 
@@ -151,8 +152,10 @@ int main() {
 
     std::cout << "\nVector size: " << vector_size << "\n";
 
-    launchKernels<true>(q, in, out_fpga_with_fence);
-    launchKernels<false>(q, in, out_fpga_without_fence);
+    for (int i = 0; i < iters; i++) {
+      launchKernels<true>(q, in, out_fpga_with_fence);
+      launchKernels<false>(q, in, out_fpga_without_fence);
+    }
   } catch (sycl::exception const &e) {
     // Catches exceptions in the host code
     std::cerr << "Caught a SYCL host exception:\n" << e.what() << "\n";
