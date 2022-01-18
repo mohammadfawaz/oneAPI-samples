@@ -15,7 +15,7 @@
 
 using namespace sycl;
 
-constexpr size_t vector_size = 10000; // Size of the input vector
+constexpr int vector_size = 10000;    // Size of the input vector
 constexpr double kNs = 1e9;           // number of nanoseconds in a second
 constexpr bool READY = true;
 
@@ -73,7 +73,7 @@ void launchKernels(queue &q, const std::vector<int> &in,
       if constexpr (use_fences)
         atomic_fence(memory_order::seq_cst, memory_scope::device);
 
-      for (size_t i = vector_size - 1; i >= 0; i--)
+      for (int i = vector_size - 1; i >= 0; i--)
         out_ptr_d[i] = buffer_ptr_d[i];
     });
   });
@@ -91,7 +91,7 @@ void launchKernels(queue &q, const std::vector<int> &in,
       device_ptr<int> in_ptr_d(in_ptr);
       device_ptr<int> buffer_ptr_d(buffer_ptr);
 
-      for (size_t i = 0; i < vector_size; i++)
+      for (int i = 0; i < vector_size; i++)
         buffer_ptr_d[i] = in_ptr_d[i] * i;
 
       // Use atomic_fence to ensure memory ordering
@@ -169,7 +169,7 @@ int main() {
   }
 
   // Compute the reference solution
-  for (size_t i = 0; i < vector_size; ++i)
+  for (int i = 0; i < vector_size; ++i)
     out_cpu[i] = in[i] * i;
 
   // Verify output and print pass/fail
