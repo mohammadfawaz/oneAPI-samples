@@ -15,8 +15,8 @@
 
 using namespace sycl;
 
-constexpr size_t vector_size = 16; // Size of the input vector
-constexpr double kNs = 1e9;        // number of nanoseconds in a second
+constexpr size_t vector_size = 10000; // Size of the input vector
+constexpr double kNs = 1e9;           // number of nanoseconds in a second
 constexpr bool READY = true;
 
 // Forward declare the kernel names in the global scope.
@@ -73,8 +73,7 @@ void launchKernels(queue &q, const std::vector<int> &in,
       if constexpr (use_fences)
         atomic_fence(memory_order::seq_cst, memory_scope::device);
 
-#pragma unroll
-      for (size_t i = 0; i < vector_size; i++)
+      for (size_t i = vector_size - 1; i >= 0; i--)
         out_ptr_d[i] = buffer_ptr_d[i];
     });
   });
@@ -92,7 +91,6 @@ void launchKernels(queue &q, const std::vector<int> &in,
       device_ptr<int> in_ptr_d(in_ptr);
       device_ptr<int> buffer_ptr_d(buffer_ptr);
 
-#pragma unroll
       for (size_t i = 0; i < vector_size; i++)
         buffer_ptr_d[i] = in_ptr_d[i] * i;
 
@@ -179,7 +177,7 @@ int main() {
   bool mismatch_without_fences = false;
   int num_errors = 0;
 
-  for (int b = 0; b < vector_size; b++) {
+  for (int b = 0; b < 100; b++) {
     std::cout << " out_cpu[b]: " << out_cpu[b] << "\n";
     std::cout << " out_fpga_with_fence[b]: " << out_fpga_with_fence[b] << "\n";
     std::cout << " out_fpga_without_fence[b]: " << out_fpga_without_fence[b] << "\n";
