@@ -1,6 +1,7 @@
-
 # Atomic Fences 
-This FPGA tutorial explains how to use `sycl:::atomic_fence`.
+This FPGA tutorial explains how to use memory fences using the
+`sycl::atomic_fence` syntax to establish memory synchronization ordering of
+non-atomic memory accesses with pipe reads and writes.
 
 ***Documentation***:  The [DPC++ FPGA Code Samples
 Guide](https://software.intel.com/content/www/us/en/develop/articles/explore-dpcpp-through-intel-fpga-code-samples.html)
@@ -24,10 +25,11 @@ resource for target-independent DPC++ programming.
 
 ## Purpose
 
-### Motivation
-### Simple Code Example
+### Tutorial Design
 
 ## Key Concepts
+* How to use `sycl::atomic_fence`.
+* The scenarios in which `sycl::atomic_fence` is required for functionality.
 
 ## License  
 Code samples are licensed under the MIT license. See
