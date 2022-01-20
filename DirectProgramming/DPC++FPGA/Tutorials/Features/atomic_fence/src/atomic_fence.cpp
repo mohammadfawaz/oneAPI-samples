@@ -15,7 +15,7 @@
 
 using namespace sycl;
 
-constexpr int vector_size = 100000;    // Size of the input vector
+constexpr int vector_size = 16384;    // Size of the input vector
 constexpr int iters = 100;             // Size of the input vector
 constexpr double kNs = 1e9;           // number of nanoseconds in a second
 constexpr bool READY = true;
@@ -74,8 +74,10 @@ void launchKernels(queue &q, const std::vector<int> &in,
       if constexpr (use_fences)
         atomic_fence(memory_order::seq_cst, memory_scope::device);
 
-      for (int i = vector_size - 1; i >= 0; i--)
-        out_ptr_d[i] = buffer_ptr_d[i];
+      for (int i = 1023; i >= 0; i--)
+        #pragma unroll
+        for (int j = 0; j < 16; j++)
+          out_ptr_d[16*i + j] = buffer_ptr_d[16*i + j];
     });
   });
 
@@ -92,9 +94,11 @@ void launchKernels(queue &q, const std::vector<int> &in,
       device_ptr<int> in_ptr_d(in_ptr);
       device_ptr<int> buffer_ptr_d(buffer_ptr);
 
-      for (int i = 0; i < vector_size; i++)
-        buffer_ptr_d[i] = in_ptr_d[i] * i;
-
+      for (int i = 0; i < 1024; i++)
+        #pragma unroll
+        for (int j = 0; j < 16; j++)
+          buffer_ptr_d[16*i + j] = in_ptr_d[16*i + j] * (16*i + j);
+ 
       // Use atomic_fence to ensure memory ordering
       if constexpr (use_fences)
         atomic_fence(memory_order::seq_cst, memory_scope::device);
@@ -183,16 +187,16 @@ int main() {
   for (int b = 0; b < 100; b++) {
     std::cout << " out_cpu[b]: " << out_cpu[b] << "\n";
 //    std::cout << " out_fpga_with_fence[b]: " << out_fpga_with_fence[b] << "\n";
-    std::cout << " out_fpga_without_fence[b]: " << out_fpga_without_fence[b] << "\n";
+    std::cout << " out_fpga_without_fence[b]: " << out_fpga_without_fence[b] << "\n\n";
   }
 
-  for (int b = 0; b < vector_size; b++) {
-    if (num_errors < 10 && out_fpga_with_fence[b] != out_cpu[b]) {
-      match_with_fences = false;
-      std::cerr << " (mismatch, expected " << out_cpu[b] << ")\n";
-      num_errors++;
-    }
-  }
+//  for (int b = 0; b < vector_size; b++) {
+//    if (num_errors < 10 && out_fpga_with_fence[b] != out_cpu[b]) {
+//      match_with_fences = false;
+//      std::cerr << " (mismatch, expected " << out_cpu[b] << ")\n";
+//      num_errors++;
+//    }
+//  }
 
   for (int b = 0; b < vector_size; b++) {
     if (out_fpga_without_fence[b] != out_cpu[b]) {
